@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import Papa from "papaparse";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -8,7 +8,7 @@ import {
   Upload, BarChart2, FileText, CheckCircle, AlertTriangle, XCircle,
   AlertCircle, Download, RefreshCw, Search, Zap, Copy, Users,
   ClipboardList, Shield, ThumbsUp, ThumbsDown, Calendar, Info, Edit3,
-  ChevronDown, ChevronRight
+  ChevronDown, ChevronRight, Loader
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -347,35 +347,35 @@ const ICONS = {
 
 function Badge({type}){
   const c=MC[type]||{color:"#94A3B8",bg:"#1e293b",border:"#33415530"};
-  return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:c.bg,color:c.color,border:`1px solid ${c.border}`,borderRadius:5,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{ICONS[type]} {type}</span>;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:c.bg,color:c.color,border:`1px solid ${c.border}`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",letterSpacing:"0.01em"}}>{ICONS[type]} {type}</span>;
 }
 function ConfBar({value}){
-  if(!value)return<span style={{color:"#334155",fontSize:11}}>—</span>;
+  if(!value)return<span style={{color:"#334155",fontSize:12}}>—</span>;
   const col=value>=90?"#10B981":value>=75?"#F59E0B":"#F87171";
   return(
     <div style={{display:"flex",alignItems:"center",gap:6}}>
-      <div style={{width:38,height:3,background:"#1e293b",borderRadius:2,overflow:"hidden"}}>
-        <div style={{height:"100%",width:`${value}%`,background:col,borderRadius:2}}/>
+      <div style={{width:44,height:4,background:"#1e293b",borderRadius:2,overflow:"hidden"}}>
+        <div style={{height:"100%",width:`${value}%`,background:col,borderRadius:2,transition:"width 0.4s cubic-bezier(0.16,1,0.3,1)"}}/>
       </div>
-      <span style={{fontSize:10,color:col,fontWeight:700,fontFamily:"monospace"}}>{value}%</span>
+      <span style={{fontSize:11,color:col,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{value}%</span>
     </div>
   );
 }
 function StatusChip({status}){
   const M={pending:{color:"#60A5FA",bg:"#0c1a35",label:"Pending"},approved:{color:"#10B981",bg:"#052e1c",label:"Approved"},flagged:{color:"#F87171",bg:"#2d0808",label:"Flagged"}};
   const c=M[status]||M.pending;
-  return <span style={{background:c.bg,color:c.color,padding:"2px 8px",borderRadius:5,fontSize:10,fontWeight:700}}>{c.label}</span>;
+  return <span style={{background:c.bg,color:c.color,padding:"3px 10px",borderRadius:6,fontSize:11,fontWeight:700}}>{c.label}</span>;
 }
 function KPICard({label,value,sub,color,icon,onClick}){
   return(
-    <div onClick={onClick} style={{background:"#0D1424",border:`1px solid #1E2D45`,borderLeft:`3px solid ${color}`,borderRadius:10,padding:"15px 18px",cursor:onClick?"pointer":"default"}}>
+    <div className="kpi-card" onClick={onClick} style={{background:"#0D1424",border:"1px solid #1E2D45",borderLeft:`3px solid ${color}`,borderRadius:10,padding:"16px 20px",cursor:onClick?"pointer":"default"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
-          <div style={{fontSize:9,color:"#64748B",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.07em"}}>{label}</div>
-          <div style={{fontSize:25,fontWeight:700,color,fontFamily:"monospace",lineHeight:1}}>{value}</div>
-          {sub&&<div style={{fontSize:9,color:"#475569",marginTop:5}}>{sub}</div>}
+          <div style={{fontSize:11,color:"#64748B",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600}}>{label}</div>
+          <div style={{fontSize:28,fontWeight:700,color,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{value}</div>
+          {sub&&<div style={{fontSize:11,color:"#475569",marginTop:6}}>{sub}</div>}
         </div>
-        <div style={{color,opacity:0.4}}>{icon}</div>
+        <div style={{color,opacity:0.3}}>{icon}</div>
       </div>
     </div>
   );
@@ -383,9 +383,9 @@ function KPICard({label,value,sub,color,icon,onClick}){
 function ChartTip({active,payload,label}){
   if(!active||!payload?.length)return null;
   return(
-    <div style={{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:8,padding:"10px 14px",fontSize:11}}>
-      <div style={{color:"#94A3B8",marginBottom:6}}>{label}</div>
-      {payload.map((p,i)=><div key={i} style={{color:p.color,fontFamily:"monospace"}}>{p.name}: {p.value}</div>)}
+    <div style={{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:8,padding:"12px 16px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+      <div style={{color:"#94A3B8",marginBottom:6,fontWeight:600}}>{label}</div>
+      {payload.map((p,i)=><div key={i} style={{color:p.color,fontFamily:"'JetBrains Mono',monospace"}}>{p.name}: {p.value}</div>)}
     </div>
   );
 }
@@ -395,37 +395,49 @@ function ChartTip({active,payload,label}){
 // ─────────────────────────────────────────────────────────────────────────────
 function UploadPanel({title,sub,icon,data,fileName,color,onFile,fileRef}){
   const loaded=data.length>0;
+  const [dragging,setDragging]=useState(false);
+  const handleDragOver=useCallback(e=>{e.preventDefault();e.stopPropagation();setDragging(true);},[]);
+  const handleDragLeave=useCallback(e=>{e.preventDefault();e.stopPropagation();setDragging(false);},[]);
+  const handleDrop=useCallback(e=>{e.preventDefault();e.stopPropagation();setDragging(false);const f=e.dataTransfer?.files?.[0];if(f)onFile(f);},[onFile]);
   return(
-    <div style={{background:"#0D1424",border:`1px solid #1E2D45`,borderRadius:12,padding:22}}>
+    <div style={{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:12,padding:22}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-        <div style={{width:34,height:34,background:`${color}18`,border:`1px solid ${color}30`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",color}}>{icon}</div>
+        <div style={{width:36,height:36,background:`${color}18`,border:`1px solid ${color}30`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",color}}>{icon}</div>
         <div>
-          <div style={{fontWeight:600,fontSize:14,color:"#CBD5E1"}}>{title}</div>
-          <div style={{fontSize:10,color:"#64748B"}}>{sub}</div>
+          <div style={{fontWeight:600,fontSize:15,color:"#E2E8F0"}}>{title}</div>
+          <div style={{fontSize:12,color:"#64748B"}}>{sub}</div>
         </div>
-        {loaded&&<span style={{marginLeft:"auto",background:`${color}15`,color,border:`1px solid ${color}25`,padding:"2px 10px",borderRadius:20,fontSize:10,fontWeight:700}}>{data.length} rows</span>}
+        {loaded&&<span style={{marginLeft:"auto",background:`${color}15`,color,border:`1px solid ${color}25`,padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700}}>{data.length} rows</span>}
       </div>
       <input ref={fileRef} type="file" accept=".csv,.txt" style={{display:"none"}} onChange={e=>onFile(e.target.files[0])}/>
-      <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${loaded?color:"#1E2D45"}`,borderRadius:10,padding:"22px 20px",textAlign:"center",cursor:"pointer",background:loaded?`${color}06`:"transparent"}}>
+      <div
+        className={`dropzone${dragging?" dragging":""}`}
+        onClick={()=>fileRef.current?.click()}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={{border:`2px dashed ${loaded?color:dragging?"#3B82F6":"#1E2D45"}`,borderRadius:10,padding:"28px 20px",textAlign:"center",cursor:"pointer",background:loaded?`${color}06`:dragging?"rgba(59,130,246,0.06)":"transparent"}}
+      >
         {loaded?(
-          <><CheckCircle size={20} style={{margin:"0 auto 8px",color}}/><div style={{fontSize:12,color,fontWeight:600}}>{fileName}</div><div style={{fontSize:10,color:"#475569",marginTop:3}}>Click to replace</div></>
+          <><CheckCircle size={22} style={{margin:"0 auto 8px",color}}/><div style={{fontSize:13,color,fontWeight:600}}>{fileName}</div><div style={{fontSize:11,color:"#475569",marginTop:4}}>Click to replace</div></>
         ):(
-          <><Upload size={20} style={{margin:"0 auto 8px",color:"#334155"}}/><div style={{fontSize:12,color:"#94A3B8"}}>Drop CSV or click to browse</div><div style={{fontSize:10,color:"#475569",marginTop:5}}>GSTIN · Invoice No · Date · Taxable · CGST · SGST · IGST — auto-detected</div></>
+          <><Upload size={22} style={{margin:"0 auto 8px",color:dragging?"#3B82F6":"#475569"}}/><div style={{fontSize:13,color:dragging?"#60A5FA":"#94A3B8",fontWeight:500}}>{dragging?"Drop file here":"Drop CSV or click to browse"}</div><div style={{fontSize:11,color:"#475569",marginTop:6}}>GSTIN · Invoice No · Date · Taxable · CGST · SGST · IGST — auto-detected</div></>
         )}
       </div>
       {loaded&&(
-        <div style={{marginTop:10,background:"#070B14",borderRadius:8,overflow:"auto",maxHeight:100}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"monospace",fontSize:10}}>
-            <thead><tr>{["GSTIN","Invoice","Date","Taxable","Tax"].map(h=><th key={h} style={{padding:"5px 8px",color:"#475569",textAlign:"left",borderBottom:"1px solid #1E2D45"}}>{h}</th>)}</tr></thead>
+        <div style={{marginTop:12,background:"#070B14",borderRadius:8,overflow:"auto",maxHeight:110}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>
+            <thead><tr>{["GSTIN","Invoice","Date","Taxable","Tax"].map(h=><th key={h} style={{padding:"6px 10px",color:"#475569",textAlign:"left",borderBottom:"1px solid #1E2D45",fontWeight:600}}>{h}</th>)}</tr></thead>
             <tbody>
               {data.slice(0,4).map((r,i)=>(
                 <tr key={i}>{[r.gstin?.slice(0,15),r.invoice_no?.slice(0,14),String(r.invoice_date||"").slice(0,10),inrFmt(r.taxable_value,true),inrFmt(r.cgst+r.sgst+r.igst,true)].map((v,j)=>(
-                  <td key={j} style={{padding:"4px 8px",color:"#94A3B8",borderBottom:"1px solid #1E2D4518"}}>{v}</td>
+                  <td key={j} style={{padding:"5px 10px",color:"#94A3B8",borderBottom:"1px solid #1E2D4518"}}>{v}</td>
                 ))}</tr>
               ))}
             </tbody>
           </table>
-          {data.length>4&&<div style={{color:"#475569",fontSize:10,padding:"4px 8px"}}>+{data.length-4} more…</div>}
+          {data.length>4&&<div style={{color:"#475569",fontSize:11,padding:"5px 10px"}}>+{data.length-4} more…</div>}
         </div>
       )}
     </div>
@@ -454,6 +466,7 @@ export default function App(){
   const [expandedVendor,setExpandedVendor]=useState(null);
   const [itcSection,setItcSection]=useState(null);
   const [valueApprovals,setValueApprovals]=useState({});
+  const [isProcessing,setIsProcessing]=useState(false);
   const booksRef=useRef(null), twoBRef=useRef(null);
 
   const parseCSV=(file,setFn,setName)=>{
@@ -467,10 +480,14 @@ export default function App(){
 
   const runReconcile=()=>{
     if(!books.length||!twoB.length)return;
-    const r=reconcile(books,twoB);
-    setResults(r);
-    setReviewItems(Object.fromEntries(r.filter(x=>x.needsReview).map(x=>[x.id,{status:"pending",note:""}])));
-    setTab("dashboard");setFilter("All");setSearch("");setMonthFilter("All");
+    setIsProcessing(true);
+    setTimeout(()=>{
+      const r=reconcile(books,twoB);
+      setResults(r);
+      setReviewItems(Object.fromEntries(r.filter(x=>x.needsReview).map(x=>[x.id,{status:"pending",note:""}])));
+      setTab("dashboard");setFilter("All");setSearch("");setMonthFilter("All");
+      setIsProcessing(false);
+    },400);
   };
 
   const updateReview=(id,status,note)=>setReviewItems(prev=>({...prev,[id]:{status,note:note??prev[id]?.note??""}}));
@@ -606,16 +623,16 @@ export default function App(){
     root:{background:"#060A13",minHeight:"100vh",color:"#CBD5E1",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13},
     header:{background:"#0D1424",borderBottom:"1px solid #1E2D45",padding:"16px 28px",display:"flex",alignItems:"center",gap:14},
     nav:{display:"flex",gap:0,padding:"0 28px",background:"#0A0F1C",borderBottom:"1px solid #1E2D45",overflowX:"auto"},
-    content:{padding:"24px 28px",maxWidth:1400,margin:"0 auto"},
-    navBtn:a=>({cursor:"pointer",background:"none",border:"none",borderBottom:`2px solid ${a?"#3B82F6":"transparent"}`,color:a?"#E2E8F0":"#64748B",padding:"13px 16px",fontSize:11,fontWeight:600,fontFamily:"inherit",marginBottom:-1,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}),
-    card:{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:12,padding:20},
-    primaryBtn:{cursor:"pointer",background:"#1D6EE8",color:"#fff",border:"none",borderRadius:8,padding:"11px 26px",fontSize:12,fontWeight:600,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7},
-    ghostBtn:{cursor:"pointer",background:"transparent",color:"#94A3B8",border:"1px solid #1E2D45",borderRadius:8,padding:"7px 14px",fontSize:11,fontWeight:500,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6},
-    pill:(a,col)=>({cursor:"pointer",background:a?`${col}20`:"transparent",color:a?col:"#64748B",border:`1px solid ${a?col:"#1E2D45"}`,borderRadius:20,padding:"4px 11px",fontSize:10,fontWeight:700,fontFamily:"inherit"}),
-    input:{background:"#070B14",border:"1px solid #1E2D45",borderRadius:8,padding:"7px 12px 7px 28px",color:"#CBD5E1",fontFamily:"inherit",fontSize:11,outline:"none"},
-    mono:{fontFamily:"monospace",fontSize:11},
-    divider:{borderTop:"1px solid #1E2D45",margin:"14px 0"},
-    sectionTitle:{fontSize:10,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14},
+    content:{padding:"24px 28px",maxWidth:1440,margin:"0 auto"},
+    navBtn:a=>({cursor:"pointer",background:"none",border:"none",borderBottom:`2px solid ${a?"#3B82F6":"transparent"}`,color:a?"#E2E8F0":"#64748B",padding:"14px 18px",fontSize:12,fontWeight:600,fontFamily:"inherit",marginBottom:-1,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:7}),
+    card:{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:12,padding:22},
+    primaryBtn:{cursor:"pointer",background:"#1D6EE8",color:"#fff",border:"none",borderRadius:8,padding:"12px 28px",fontSize:13,fontWeight:600,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8},
+    ghostBtn:{cursor:"pointer",background:"transparent",color:"#94A3B8",border:"1px solid #1E2D45",borderRadius:8,padding:"8px 16px",fontSize:12,fontWeight:500,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7},
+    pill:(a,col)=>({cursor:"pointer",background:a?`${col}20`:"transparent",color:a?col:"#64748B",border:`1px solid ${a?col:"#1E2D45"}`,borderRadius:20,padding:"5px 13px",fontSize:11,fontWeight:700,fontFamily:"inherit"}),
+    input:{background:"#070B14",border:"1px solid #1E2D45",borderRadius:8,padding:"8px 14px 8px 32px",color:"#CBD5E1",fontFamily:"inherit",fontSize:12,outline:"none"},
+    mono:{fontFamily:"'JetBrains Mono',monospace",fontSize:12},
+    divider:{borderTop:"1px solid #1E2D45",margin:"16px 0"},
+    sectionTitle:{fontSize:12,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14},
   };
 
   return(
@@ -631,16 +648,16 @@ export default function App(){
         </div>
         {results&&(
           <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
-            {stats&&<div style={{display:"flex",gap:10,marginRight:8,fontSize:10}}>
+            {stats&&<div style={{display:"flex",gap:10,marginRight:10,fontSize:11}}>
               <span style={{color:"#10B981"}}>{stats.counts["Exact Match"]} matched</span>
               <span style={{color:"#64748B"}}>·</span>
               <span style={{color:"#F87171"}}>{(stats.counts["Missing in 2B"]||0)+(stats.counts["Missing in Books"]||0)} missing</span>
               <span style={{color:"#64748B"}}>·</span>
               <span style={{color:"#A78BFA"}}>{stats.pending} pending review</span>
             </div>}
-            <button style={S.ghostBtn} onClick={()=>downloadCSV(enriched,"itc_full_reconciliation.csv")}><Download size={12}/> Export All</button>
-            <button style={S.ghostBtn} onClick={()=>{setResults(null);setTab("upload");setBooks([]);setTwoB([]);setBooksName("");setTwoBName("");}}>
-              <RefreshCw size={12}/> Reset
+            <button className="ghost-btn" style={S.ghostBtn} onClick={()=>downloadCSV(enriched,"itc_full_reconciliation.csv")}><Download size={13}/> Export All</button>
+            <button className="ghost-btn" style={S.ghostBtn} onClick={()=>{setResults(null);setTab("upload");setBooks([]);setTwoB([]);setBooksName("");setTwoBName("");}}>
+              <RefreshCw size={13}/> Reset
             </button>
           </div>
         )}
@@ -648,8 +665,8 @@ export default function App(){
 
       {/* NAV */}
       <div style={S.nav}>
-        {[["upload",<Upload size={12}/>,"Upload Data"],["dashboard",<BarChart2 size={12}/>,"Dashboard"],["itc",<Shield size={12}/>,"ITC Available"],["results",<FileText size={12}/>,"Results"],["vendors",<Users size={12}/>,"Vendor Analysis"],["review",<ClipboardList size={12}/>,`Manual Review${stats?.pending?` (${stats.pending})`:""}`]].map(([t,icon,label])=>(
-          <button key={t} style={S.navBtn(tab===t)} onClick={()=>setTab(t)} disabled={!results&&t!=="upload"}>{icon} {label}</button>
+        {[["upload",<Upload size={13}/>,"Upload Data"],["dashboard",<BarChart2 size={13}/>,"Dashboard"],["itc",<Shield size={13}/>,"ITC Available"],["results",<FileText size={13}/>,"Results"],["vendors",<Users size={13}/>,"Vendor Analysis"],["review",<ClipboardList size={13}/>,`Manual Review${stats?.pending?` (${stats.pending})`:""}`]].map(([t,icon,label])=>(
+          <button key={t} className={`nav-tab${tab===t?" active":""}`} style={S.navBtn(tab===t)} onClick={()=>setTab(t)} disabled={!results&&t!=="upload"}>{icon} {label}</button>
         ))}
       </div>
 
@@ -657,98 +674,100 @@ export default function App(){
 
         {/* ══ UPLOAD ══ */}
         {tab==="upload"&&(
-          <div>
-            <div style={{display:"flex",alignItems:"flex-end",marginBottom:22}}>
+          <div className="tab-content">
+            <div style={{display:"flex",alignItems:"flex-end",marginBottom:24}}>
               <div>
-                <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 4px",color:"#E2E8F0"}}>Upload Source Files</h2>
-                <p style={{fontSize:11,color:"#64748B",margin:0}}>CSV exports from your purchase register and GSTR-2B portal. Column names auto-detected.</p>
+                <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 5px",color:"#E2E8F0"}}>Upload Source Files</h2>
+                <p style={{fontSize:12,color:"#64748B",margin:0}}>CSV exports from your purchase register and GSTR-2B portal. Column names auto-detected.</p>
               </div>
-              <button style={{...S.ghostBtn,marginLeft:"auto",borderStyle:"dashed",fontSize:11}} onClick={loadSample}>▶ Load Sample Data (17×14)</button>
+              <button className="ghost-btn" style={{...S.ghostBtn,marginLeft:"auto",borderStyle:"dashed",fontSize:12}} onClick={loadSample}>▶ Load Sample Data (17×14)</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:22}}>
-              <UploadPanel title="Books of Accounts" sub="Purchase register / ledger export" icon={<FileText size={17}/>} data={books} fileName={booksName} color="#3B82F6" onFile={f=>parseCSV(f,setBooks,setBooksName)} fileRef={booksRef}/>
-              <UploadPanel title="GSTR-2B Portal" sub="Auto-drafted ITC from GST portal" icon={<BarChart2 size={17}/>} data={twoB} fileName={twoBName} color="#8B5CF6" onFile={f=>parseCSV(f,setTwoB,setTwoBName)} fileRef={twoBRef}/>
+            <div className="grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginBottom:24}}>
+              <UploadPanel title="Books of Accounts" sub="Purchase register / ledger export" icon={<FileText size={18}/>} data={books} fileName={booksName} color="#3B82F6" onFile={f=>parseCSV(f,setBooks,setBooksName)} fileRef={booksRef}/>
+              <UploadPanel title="GSTR-2B Portal" sub="Auto-drafted ITC from GST portal" icon={<BarChart2 size={18}/>} data={twoB} fileName={twoBName} color="#8B5CF6" onFile={f=>parseCSV(f,setTwoB,setTwoBName)} fileRef={twoBRef}/>
             </div>
-            <div style={{...S.card,marginBottom:22}}>
+            <div style={{...S.card,marginBottom:24}}>
               <div style={S.sectionTitle}>Accepted CSV Columns</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,marginBottom:16}}>
+              <div className="grid-7" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,marginBottom:18}}>
                 {[["gstin","Supplier GSTIN / vendor_gstin / gst_no"],["invoice_no","invoice_number / bill_no / voucher_no"],["invoice_date","date / doc_date / bill_date (any format)"],["taxable_value","assessable_value / net_amount / taxable"],["cgst","cgst_amount / central_gst"],["sgst","sgst_amount / state_gst / utgst"],["igst","igst_amount / integrated_gst"]].map(([col,hint])=>(
-                  <div key={col} style={{background:"#070B14",border:"1px solid #1E2D45",padding:"8px 10px",borderRadius:7}}>
-                    <div style={{fontFamily:"monospace",fontSize:10,color:"#60A5FA",marginBottom:3}}>{col}</div>
-                    <div style={{fontSize:9,color:"#475569"}}>{hint}</div>
+                  <div key={col} style={{background:"#070B14",border:"1px solid #1E2D45",padding:"10px 12px",borderRadius:8}}>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#60A5FA",marginBottom:4,fontWeight:600}}>{col}</div>
+                    <div style={{fontSize:10,color:"#475569"}}>{hint}</div>
                   </div>
                 ))}
               </div>
               <div style={S.divider}/>
               <div style={S.sectionTitle}>Matching Logic</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+              <div className="grid-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
                 {[["Step 1 – Exact","GSTIN + Normalised InvNo + Date ±1d + Tax match → 100%","#10B981"],["Step 2 – Relaxed","Exact InvNo + Date ±5d, value may differ → 72–90%","#F59E0B"],["Step 3 – Fuzzy","Levenshtein ≥65% on InvNo + GSTIN + Date ±5d → 65–85%","#A78BFA"],["Step 4 – Review","Low confidence / unmatched → Manual Review Queue","#F87171"]].map(([t,d,col])=>(
-                  <div key={t} style={{borderLeft:`3px solid ${col}`,paddingLeft:10}}>
-                    <div style={{fontSize:10,fontWeight:700,color:col,marginBottom:3}}>{t}</div>
-                    <div style={{fontSize:10,color:"#64748B"}}>{d}</div>
+                  <div key={t} style={{borderLeft:`3px solid ${col}`,paddingLeft:12}}>
+                    <div style={{fontSize:12,fontWeight:700,color:col,marginBottom:4}}>{t}</div>
+                    <div style={{fontSize:11,color:"#64748B"}}>{d}</div>
                   </div>
                 ))}
               </div>
             </div>
             <div style={{textAlign:"center"}}>
-              <button style={{...S.primaryBtn,opacity:books.length&&twoB.length?1:0.4,fontSize:13,padding:"13px 40px"}} onClick={runReconcile} disabled={!books.length||!twoB.length}><Zap size={16}/> Run Reconciliation</button>
-              {(!books.length||!twoB.length)&&<div style={{fontSize:11,color:"#475569",marginTop:8}}>Upload both files to proceed</div>}
+              <button className="primary-btn" style={{...S.primaryBtn,opacity:books.length&&twoB.length?1:0.4,fontSize:14,padding:"14px 44px"}} onClick={runReconcile} disabled={!books.length||!twoB.length||isProcessing}>
+                {isProcessing?<><span className="spinner"/> Processing…</>:<><Zap size={17}/> Run Reconciliation</>}
+              </button>
+              {(!books.length||!twoB.length)&&<div style={{fontSize:12,color:"#475569",marginTop:10}}>Upload both files to proceed</div>}
             </div>
           </div>
         )}
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard"&&stats&&(
-          <div>
-            <div style={{marginBottom:20}}>
-              <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 4px",color:"#E2E8F0"}}>Reconciliation Dashboard</h2>
-              <p style={{fontSize:11,color:"#64748B",margin:0}}>{books.length} Books entries vs {twoB.length} GSTR-2B entries → {stats.total} reconciliation records</p>
+          <div className="tab-content">
+            <div style={{marginBottom:22}}>
+              <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 5px",color:"#E2E8F0"}}>Reconciliation Dashboard</h2>
+              <p style={{fontSize:12,color:"#64748B",margin:0}}>{books.length} Books entries vs {twoB.length} GSTR-2B entries → {stats.total} reconciliation records</p>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
+            <div className="grid-4 stagger" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:14}}>
               <KPICard label="Total Records"    value={stats.total}                    sub="across both sources"              color="#60A5FA" icon={<FileText size={20}/>} onClick={()=>{setFilter("All");setTab("results");}}/>
               <KPICard label="Exact Matches"    value={stats.counts["Exact Match"]}    sub={`${stats.exactPct}% match rate`}  color="#10B981" icon={<CheckCircle size={20}/>} onClick={()=>{setFilter("Exact Match");setTab("results");}}/>
               <KPICard label="Pending Review"   value={stats.pending}                  sub={`${stats.approved} approved · ${stats.flagged} flagged`} color="#A78BFA" icon={<ClipboardList size={20}/>} onClick={()=>setTab("review")}/>
               <KPICard label="Invalid GSTINs"   value={stats.invalid}                  sub="format check failed"              color="#F87171" icon={<Shield size={20}/>}/>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
+            <div className="grid-4 stagger" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
               <KPICard label="Missing in 2B"    value={stats.counts["Missing in 2B"]}  sub={inrFmt(stats.missing2B,true)+" blocked ITC"}  color="#F87171" icon={<XCircle size={20}/>} onClick={()=>{setFilter("Missing in 2B");setTab("results");}}/>
               <KPICard label="Missing in Books" value={stats.counts["Missing in Books"]}sub={inrFmt(stats.missingBk,true)+" unbooked ITC"} color="#FB923C" icon={<AlertTriangle size={20}/>} onClick={()=>{setFilter("Missing in Books");setTab("results");}}/>
               <KPICard label="Value Mismatch"   value={stats.counts["Value Mismatch"]} sub={inrFmt(stats.riskITC,true)+" at risk"}        color="#F59E0B" icon={<AlertCircle size={20}/>} onClick={()=>{setFilter("Value Mismatch");setTab("results");}}/>
               <KPICard label="Duplicates"        value={stats.counts["Duplicate Detected"]} sub={inrFmt(stats.dupTV,true)+" taxable value"} color="#E879F9" icon={<Copy size={20}/>} onClick={()=>{setFilter("Duplicate Detected");setTab("results");}}/>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"5fr 3fr",gap:18,marginBottom:18}}>
+            <div className="grid-chart" style={{display:"grid",gridTemplateColumns:"5fr 3fr",gap:18,marginBottom:20}}>
               <div style={S.card}>
                 <div style={S.sectionTitle}>Month-wise Reconciliation Status</div>
                 {monthBar.length>0?(
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={monthBar} margin={{top:5,right:10,left:0,bottom:5}} barSize={20}>
-                      <XAxis dataKey="month" tick={{fill:"#475569",fontSize:10}} axisLine={false} tickLine={false}/>
-                      <YAxis tick={{fill:"#475569",fontSize:10}} axisLine={false} tickLine={false}/>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={monthBar} margin={{top:5,right:10,left:0,bottom:5}} barSize={22}>
+                      <XAxis dataKey="month" tick={{fill:"#64748B",fontSize:11}} axisLine={false} tickLine={false}/>
+                      <YAxis tick={{fill:"#64748B",fontSize:11}} axisLine={false} tickLine={false}/>
                       <Tooltip content={<ChartTip/>} cursor={{fill:"#1E2D4530"}}/>
-                      <Legend iconType="square" iconSize={8} wrapperStyle={{fontSize:10,color:"#64748B"}}/>
-                      <Bar dataKey="matched" name="Matched" fill="#10B981" radius={[3,3,0,0]}/>
-                      <Bar dataKey="risk" name="Risk/Mismatch" fill="#F59E0B" radius={[3,3,0,0]}/>
-                      <Bar dataKey="unmatched" name="Unmatched" fill="#F87171" radius={[3,3,0,0]}/>
+                      <Legend iconType="square" iconSize={9} wrapperStyle={{fontSize:11,color:"#64748B"}}/>
+                      <Bar dataKey="matched" name="Matched" fill="#10B981" radius={[4,4,0,0]}/>
+                      <Bar dataKey="risk" name="Risk/Mismatch" fill="#F59E0B" radius={[4,4,0,0]}/>
+                      <Bar dataKey="unmatched" name="Unmatched" fill="#F87171" radius={[4,4,0,0]}/>
                     </BarChart>
                   </ResponsiveContainer>
                 ):<div style={{color:"#475569",textAlign:"center",padding:40}}>No date data</div>}
               </div>
               <div style={S.card}>
                 <div style={S.sectionTitle}>Match Distribution</div>
-                <ResponsiveContainer width="100%" height={170}>
+                <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={2}>
-                      {pieData.map((e,i)=><Cell key={i} fill={MC[e.name]?.color||"#64748B"}/>)}
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={48} outerRadius={74} dataKey="value" paddingAngle={2}>
+                      {pieData.map((e,i)=><Cell key={i} fill={MC[e.name]?.color||"#64748B"} stroke="none"/>)}
                     </Pie>
-                    <Tooltip formatter={(v,n)=>[v+" records",n]} contentStyle={{background:"#0D1424",border:"1px solid #1E2D45",fontSize:11}}/>
+                    <Tooltip formatter={(v,n)=>[v+" records",n]} contentStyle={{background:"#0D1424",border:"1px solid #1E2D45",fontSize:12,borderRadius:8}}/>
                   </PieChart>
                 </ResponsiveContainer>
-                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {pieData.map((d,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
-                      <div style={{width:7,height:7,borderRadius:1,background:MC[d.name]?.color,flexShrink:0}}/>
-                      <span style={{fontSize:10,color:"#64748B",flex:1}}>{d.name}</span>
-                      <span style={{fontFamily:"monospace",fontSize:10,color:MC[d.name]?.color,fontWeight:700}}>{d.value}</span>
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:8,height:8,borderRadius:2,background:MC[d.name]?.color,flexShrink:0}}/>
+                      <span style={{fontSize:11,color:"#94A3B8",flex:1}}>{d.name}</span>
+                      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:MC[d.name]?.color,fontWeight:700}}>{d.value}</span>
                     </div>
                   ))}
                 </div>
@@ -756,7 +775,7 @@ export default function App(){
             </div>
             <div style={S.card}>
               <div style={S.sectionTitle}>ITC Position Summary</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12}}>
+              <div className="grid-5" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14}}>
                 {[
                   {label:"Eligible ITC (Confirmed)",value:stats.eligibleITC,color:"#10B981",sub:"Exact + probable matches",section:"eligible"},
                   {label:"ITC at Risk",value:stats.riskITC,color:"#F59E0B",sub:"Value mismatches",section:"atRisk"},
@@ -764,14 +783,12 @@ export default function App(){
                   {label:"Unbooked ITC (2B > Books)",value:stats.missingBk,color:"#FB923C",sub:"Not recorded in books",section:"unbooked"},
                   {label:"Duplicate ITC Exposure",value:stats.dupTV,color:"#E879F9",sub:"Possible double claims",section:"duplicate"},
                 ].map(({label,value,color,sub,section})=>(
-                  <div key={label} onClick={()=>{setItcSection(section);setTab("itc");}} style={{background:"#070B14",borderRadius:8,padding:"12px 14px",borderLeft:`3px solid ${color}`,cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 4px 16px ${color}20`;}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}
+                  <div key={label} className="hoverable" onClick={()=>{setItcSection(section);setTab("itc");}} style={{background:"#070B14",borderRadius:10,padding:"14px 16px",borderLeft:`3px solid ${color}`,cursor:"pointer"}}
                   >
-                    <div style={{fontSize:9,color:"#475569",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.04em"}}>{label}</div>
-                    <div style={{fontSize:18,fontWeight:700,color,fontFamily:"monospace"}}>{inrFmt(value,true)}</div>
-                    <div style={{fontSize:9,color:"#334155",marginTop:3}}>{sub}</div>
-                    <div style={{fontSize:8,color,marginTop:6,opacity:0.6}}>Click to view details →</div>
+                    <div style={{fontSize:11,color:"#475569",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em",fontWeight:600}}>{label}</div>
+                    <div style={{fontSize:20,fontWeight:700,color,fontFamily:"'JetBrains Mono',monospace"}}>{inrFmt(value,true)}</div>
+                    <div style={{fontSize:10,color:"#334155",marginTop:4}}>{sub}</div>
+                    <div style={{fontSize:10,color,marginTop:7,opacity:0.6}}>Click to view details →</div>
                   </div>
                 ))}
               </div>
@@ -781,48 +798,48 @@ export default function App(){
 
         {/* ══ ITC AVAILABLE ══ */}
         {tab==="itc"&&itcStats&&(
-          <div>
-            <div style={{marginBottom:20}}>
-              <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 4px",color:"#E2E8F0"}}>ITC Available Analysis</h2>
-              <p style={{fontSize:11,color:"#64748B",margin:0}}>Comprehensive breakdown of Input Tax Credit eligibility based on reconciliation results</p>
+          <div className="tab-content">
+            <div style={{marginBottom:22}}>
+              <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 5px",color:"#E2E8F0"}}>ITC Available Analysis</h2>
+              <p style={{fontSize:12,color:"#64748B",margin:0}}>Comprehensive breakdown of Input Tax Credit eligibility based on reconciliation results</p>
             </div>
             {/* Summary cards */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+            <div className="grid-4 stagger" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
               <div style={{background:"linear-gradient(135deg,#0c1a35,#0D1424)",border:"1px solid #3B82F630",borderRadius:12,padding:"18px 20px"}}>
-                <div style={{fontSize:9,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Total ITC as per Books</div>
-                <div style={{fontSize:24,fontWeight:700,color:"#3B82F6",fontFamily:"monospace"}}>{inrFmt(itcStats.totalBooksITC,true)}</div>
-                <div style={{fontSize:9,color:"#475569",marginTop:4}}>Sum of all tax in purchase register</div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>Total ITC as per Books</div>
+                <div style={{fontSize:26,fontWeight:700,color:"#3B82F6",fontFamily:"'JetBrains Mono',monospace"}}>{inrFmt(itcStats.totalBooksITC,true)}</div>
+                <div style={{fontSize:11,color:"#475569",marginTop:5}}>Sum of all tax in purchase register</div>
               </div>
               <div style={{background:"linear-gradient(135deg,#150d26,#0D1424)",border:"1px solid #8B5CF630",borderRadius:12,padding:"18px 20px"}}>
-                <div style={{fontSize:9,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Total ITC as per GSTR-2B</div>
-                <div style={{fontSize:24,fontWeight:700,color:"#8B5CF6",fontFamily:"monospace"}}>{inrFmt(itcStats.totalTwoBITC,true)}</div>
-                <div style={{fontSize:9,color:"#475569",marginTop:4}}>Auto-drafted ITC from GST portal</div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>Total ITC as per GSTR-2B</div>
+                <div style={{fontSize:26,fontWeight:700,color:"#8B5CF6",fontFamily:"'JetBrains Mono',monospace"}}>{inrFmt(itcStats.totalTwoBITC,true)}</div>
+                <div style={{fontSize:11,color:"#475569",marginTop:5}}>Auto-drafted ITC from GST portal</div>
               </div>
               <div style={{background:"linear-gradient(135deg,#052e1c,#0D1424)",border:"1px solid #10B98130",borderRadius:12,padding:"18px 20px"}}>
-                <div style={{fontSize:9,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>✅ Final Eligible ITC</div>
-                <div style={{fontSize:24,fontWeight:700,color:"#10B981",fontFamily:"monospace"}}>{inrFmt(itcStats.eligibleITC,true)}</div>
-                <div style={{fontSize:9,color:"#475569",marginTop:4}}>Exact + Date match + Approved</div>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>✅ Final Eligible ITC</div>
+                <div style={{fontSize:26,fontWeight:700,color:"#10B981",fontFamily:"'JetBrains Mono',monospace"}}>{inrFmt(itcStats.eligibleITC,true)}</div>
+                <div style={{fontSize:11,color:"#475569",marginTop:5}}>Exact + Date match + Approved</div>
               </div>
               <div style={{background:"linear-gradient(135deg,#1c1005,#0D1424)",border:"1px solid #F59E0B30",borderRadius:12,padding:"18px 20px"}}>
-                <div style={{fontSize:9,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Net ITC Difference</div>
-                <div style={{fontSize:24,fontWeight:700,color:Math.abs(itcStats.totalBooksITC-itcStats.totalTwoBITC)<1?"#475569":itcStats.totalBooksITC>itcStats.totalTwoBITC?"#F87171":"#10B981",fontFamily:"monospace"}}>
+                <div style={{fontSize:11,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>Net ITC Difference</div>
+                <div style={{fontSize:26,fontWeight:700,color:Math.abs(itcStats.totalBooksITC-itcStats.totalTwoBITC)<1?"#475569":itcStats.totalBooksITC>itcStats.totalTwoBITC?"#F87171":"#10B981",fontFamily:"'JetBrains Mono',monospace"}}>
                   {itcStats.totalBooksITC>itcStats.totalTwoBITC?"▲":"▼"}{inrFmt(Math.abs(itcStats.totalBooksITC-itcStats.totalTwoBITC),true)}
                 </div>
-                <div style={{fontSize:9,color:"#475569",marginTop:4}}>Books {itcStats.totalBooksITC>itcStats.totalTwoBITC?"higher":"lower"} than 2B</div>
+                <div style={{fontSize:11,color:"#475569",marginTop:5}}>Books {itcStats.totalBooksITC>itcStats.totalTwoBITC?"higher":"lower"} than 2B</div>
               </div>
             </div>
             {/* Approved ITC breakdown bar */}
             <div style={{...S.card,marginBottom:20,padding:"16px 20px"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
                 <Shield size={16} style={{color:"#10B981"}}/>
-                <div style={{fontSize:13,fontWeight:700,color:"#E2E8F0"}}>ITC Eligibility Breakdown</div>
-                <div style={{marginLeft:"auto",fontSize:10,color:"#475569"}}>
-                  Approved as per Books: <span style={{color:"#3B82F6",fontFamily:"monospace",fontWeight:700}}>{inrFmt(itcStats.totalBooksITC,true)}</span>
+                <div style={{fontSize:14,fontWeight:700,color:"#E2E8F0"}}>ITC Eligibility Breakdown</div>
+                <div style={{marginLeft:"auto",fontSize:11,color:"#475569"}}>
+                  Approved as per Books: <span style={{color:"#3B82F6",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>{inrFmt(itcStats.totalBooksITC,true)}</span>
                   <span style={{margin:"0 8px",color:"#334155"}}>|</span>
-                  Approved as per 2B: <span style={{color:"#8B5CF6",fontFamily:"monospace",fontWeight:700}}>{inrFmt(itcStats.totalTwoBITC,true)}</span>
+                  Approved as per 2B: <span style={{color:"#8B5CF6",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>{inrFmt(itcStats.totalTwoBITC,true)}</span>
                 </div>
               </div>
-              <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",background:"#1E2D45",gap:1}}>
+              <div style={{display:"flex",height:10,borderRadius:5,overflow:"hidden",background:"#1E2D45",gap:1}}>
                 {[
                   {val:itcStats.eligibleITC,col:"#10B981"},{val:itcStats.probableITC,col:"#60A5FA"},
                   {val:itcStats.atRiskITC,col:"#F59E0B"},{val:itcStats.blockedITC,col:"#F87171"},
@@ -830,19 +847,19 @@ export default function App(){
                 ].map(({val,col},i)=>{
                   const total=itcStats.eligibleITC+itcStats.probableITC+itcStats.atRiskITC+itcStats.blockedITC+itcStats.unbookedITC+itcStats.dupITC;
                   const pct=total?((val/total)*100):0;
-                  return pct>0?<div key={i} style={{width:`${pct}%`,background:col,borderRadius:1,minWidth:pct>0?2:0,transition:"width 0.3s"}}/>:null;
+                  return pct>0?<div key={i} style={{width:`${pct}%`,background:col,borderRadius:2,minWidth:pct>0?3:0,transition:"width 0.5s cubic-bezier(0.16,1,0.3,1)"}}/>:null;
                 })}
               </div>
-              <div style={{display:"flex",gap:16,marginTop:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:18,marginTop:12,flexWrap:"wrap"}}>
                 {[
                   {label:"Eligible",val:itcStats.eligibleITC,col:"#10B981"},{label:"Probable",val:itcStats.probableITC,col:"#60A5FA"},
                   {label:"At Risk",val:itcStats.atRiskITC,col:"#F59E0B"},{label:"Blocked",val:itcStats.blockedITC,col:"#F87171"},
                   {label:"Unbooked",val:itcStats.unbookedITC,col:"#FB923C"},{label:"Duplicate",val:itcStats.dupITC,col:"#E879F9"},
                 ].map(({label,val,col})=>(
-                  <div key={label} style={{display:"flex",alignItems:"center",gap:5}}>
-                    <div style={{width:8,height:8,borderRadius:2,background:col}}/>
-                    <span style={{fontSize:10,color:"#64748B"}}>{label}:</span>
-                    <span style={{fontSize:10,color:col,fontFamily:"monospace",fontWeight:700}}>{inrFmt(val,true)}</span>
+                  <div key={label} style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{width:10,height:10,borderRadius:3,background:col}}/>
+                    <span style={{fontSize:11,color:"#94A3B8"}}>{label}:</span>
+                    <span style={{fontSize:11,color:col,fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>{inrFmt(val,true)}</span>
                   </div>
                 ))}
               </div>
@@ -1037,46 +1054,46 @@ export default function App(){
 
         {/* ══ RESULTS ══ */}
         {tab==="results"&&enriched.length>0&&(
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+          <div className="tab-content">
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
               <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                <Search size={12} style={{position:"absolute",left:9,color:"#475569"}}/>
-                <input placeholder="Search GSTIN · Invoice · Vendor…" value={search} onChange={e=>setSearch(e.target.value)} style={{...S.input,width:230}}/>
+                <Search size={13} style={{position:"absolute",left:10,color:"#475569"}}/>
+                <input placeholder="Search GSTIN · Invoice · Vendor…" value={search} onChange={e=>setSearch(e.target.value)} style={{...S.input,width:250}}/>
               </div>
               <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                <Calendar size={12} style={{position:"absolute",left:9,color:"#475569"}}/>
-                <select value={monthFilter} onChange={e=>setMonthFilter(e.target.value)} style={{...S.input,width:140,cursor:"pointer"}}>
+                <Calendar size={13} style={{position:"absolute",left:10,color:"#475569"}}/>
+                <select value={monthFilter} onChange={e=>setMonthFilter(e.target.value)} style={{...S.input,width:150,cursor:"pointer"}}>
                   {monthOptions.map(m=><option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
-              <span style={{...S.mono,color:"#475569"}}>{filtered.length} of {stats?.total} records</span>
+              <span style={{...S.mono,color:"#64748B"}}>{filtered.length} of {stats?.total} records</span>
               <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-                <button style={S.ghostBtn} onClick={()=>downloadCSV(filtered,"itc_filtered.csv")}><Download size={12}/> Export Filtered</button>
-                <button style={S.ghostBtn} onClick={()=>downloadCSV(enriched,"itc_full_reconciliation.csv")}><Download size={12}/> Export All ({stats?.total})</button>
+                <button className="ghost-btn" style={S.ghostBtn} onClick={()=>downloadCSV(filtered,"itc_filtered.csv")}><Download size={13}/> Export Filtered</button>
+                <button className="ghost-btn" style={S.ghostBtn} onClick={()=>downloadCSV(enriched,"itc_full_reconciliation.csv")}><Download size={13}/> Export All ({stats?.total})</button>
               </div>
             </div>
-            <div style={{display:"flex",gap:5,marginBottom:14,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
               {["All",...Object.keys(MC)].map(f=>{
                 const count=f==="All"?stats?.total:(stats?.counts[f]||0);
                 const col=f==="All"?"#60A5FA":(MC[f]?.color||"#64748B");
                 if(f!=="All"&&!count)return null;
-                return<button key={f} style={S.pill(filter===f,col)} onClick={()=>setFilter(f)}>{f} ({count})</button>;
+                return<button key={f} className="filter-pill" style={S.pill(filter===f,col)} onClick={()=>setFilter(f)}>{f} ({count})</button>;
               })}
             </div>
 
             {/* Export notice */}
-            <div style={{background:"#0c1a35",border:"1px solid #60A5FA30",borderRadius:8,padding:"8px 14px",marginBottom:12,fontSize:10,color:"#60A5FA",display:"flex",gap:8,alignItems:"center"}}>
-              <Info size={12}/>
+            <div style={{background:"#0c1a35",border:"1px solid #60A5FA30",borderRadius:8,padding:"10px 16px",marginBottom:14,fontSize:11,color:"#60A5FA",display:"flex",gap:8,alignItems:"center"}}>
+              <Info size={13}/>
               Exported CSV includes {">"}30 columns: supplier name, GSTIN validation, all tax components (CGST/SGST/IGST), taxable value, delta variance, date difference, invoice similarity %, ITC claimability, and action required — for every record.
             </div>
 
             <div style={{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:12,overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontFamily:"monospace"}}>
+              <div style={{overflowX:"auto",maxHeight:600}}>
+                <table className="sticky-header" style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}>
                   <thead>
                     <tr style={{background:"#070B14",borderBottom:"1px solid #1E2D45"}}>
-                      {["#","Type","Conf","Supplier","GSTIN (Books)","Invoice (Books)","Date (Books)","Taxable (Bk)","CGST","SGST","IGST","Tax (Books)","Invoice (2B)","Date (2B)","Tax (2B)","Δ Tax","Split","✓","Review","Actions"].map(h=>(
-                        <th key={h} style={{padding:"9px 10px",textAlign:"left",fontWeight:600,color:"#475569",whiteSpace:"nowrap",fontSize:9,letterSpacing:"0.04em"}}>{h}</th>
+                      {["#","Type","Conf","Supplier","GSTIN","Invoice (Books)","Date (Bk)","Taxable (Bk)","Tax (Books)","Invoice (2B)","Date (2B)","Tax (2B)","Δ Tax","Split","✓","Review","Actions"].map(h=>(
+                        <th key={h} style={{padding:"10px 10px",textAlign:h.includes("Tax")||h.includes("Taxable")?"right":"left",fontWeight:600,color:"#64748B",whiteSpace:"nowrap",fontSize:10,letterSpacing:"0.04em"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1085,25 +1102,22 @@ export default function App(){
                       const delta=r.bTX&&r.tTX?r.bTX-r.tTX:0;
                       const dc=Math.abs(delta)<1?"#475569":delta>0?"#F87171":"#10B981";
                       return(
-                        <tr key={r.id} style={{borderBottom:"1px solid #1E2D4530",background:i%2===0?"transparent":"#0A0F1C"}}>
-                          <td style={{padding:"7px 10px",color:"#334155"}}>{i+1}</td>
-                          <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}><Badge type={r.type}/></td>
-                          <td style={{padding:"7px 10px"}}><ConfBar value={r.conf}/></td>
-                          <td style={{padding:"7px 10px",color:"#94A3B8",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.bName}>{r.bName||"—"}</td>
-                          <td style={{padding:"7px 10px",color:r.gstinValid===false&&r.bG?"#F87171":"#64748B",fontSize:10}} title={r.bG}>{r.bG?.slice(0,15)||"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#CBD5E1"}}>{r.bI||"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#64748B"}}>{r.bD||"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#94A3B8",textAlign:"right"}}>{r.bTV?inrFmt(r.bTV,true):"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#64748B",textAlign:"right"}}>{r.bCG?inrFmt(r.bCG,true):"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#64748B",textAlign:"right"}}>{r.bSG?inrFmt(r.bSG,true):"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#64748B",textAlign:"right"}}>{r.bIG?inrFmt(r.bIG,true):"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#CBD5E1",textAlign:"right",fontWeight:600}}>{r.bTX?inrFmt(r.bTX,true):"—"}</td>
-                          <td style={{padding:"7px 10px",color:r.tI&&r.bI&&normalizeInv(r.tI)!==normalizeInv(r.bI)?"#A78BFA":"#CBD5E1"}}>{r.tI||"—"}</td>
-                          <td style={{padding:"7px 10px",color:r.bD&&r.tD&&r.bD!==r.tD?"#A78BFA":"#64748B"}}>{r.tD||"—"}</td>
-                          <td style={{padding:"7px 10px",color:"#CBD5E1",textAlign:"right",fontWeight:600}}>{r.tTX?inrFmt(r.tTX,true):"—"}</td>
-                          <td style={{padding:"7px 10px",textAlign:"right",color:dc,fontWeight:Math.abs(delta)>0.5?700:400}}>{Math.abs(delta)>0.5?(delta>0?"▲":"▼")+inrFmt(Math.abs(delta),true):"—"}</td>
-                          <td style={{padding:"7px 10px",textAlign:"center"}}>{r.bCnt>1?<span style={{background:"#25081a",color:"#E879F9",border:"1px solid #E879F930",borderRadius:4,padding:"1px 5px",fontWeight:700}}>{r.bCnt}×</span>:<span style={{color:"#334155"}}>1</span>}</td>
-                          <td style={{padding:"7px 10px",textAlign:"center"}}>{r.bG?(r.gstinValid?<CheckCircle size={12} color="#10B981"/>:<XCircle size={12} color="#F87171"/>):<span style={{color:"#334155"}}>—</span>}</td>
+                        <tr key={r.id} className="table-row-hover" style={{borderBottom:"1px solid #1E2D4530",background:i%2===0?"transparent":"#111827"}}>
+                          <td style={{padding:"8px 10px",color:"#475569"}}>{i+1}</td>
+                          <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}><Badge type={r.type}/></td>
+                          <td style={{padding:"8px 10px"}}><ConfBar value={r.conf}/></td>
+                          <td style={{padding:"8px 10px",color:"#94A3B8",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',sans-serif"}} title={r.bName}>{r.bName||"—"}</td>
+                          <td style={{padding:"8px 10px",color:r.gstinValid===false&&r.bG?"#F87171":"#64748B",fontSize:11}} title={r.bG}>{r.bG?.slice(0,15)||"—"}</td>
+                          <td style={{padding:"8px 10px",color:"#E2E8F0"}}>{r.bI||"—"}</td>
+                          <td style={{padding:"8px 10px",color:"#64748B"}}>{r.bD||"—"}</td>
+                          <td style={{padding:"8px 10px",color:"#94A3B8",textAlign:"right"}}>{r.bTV?inrFmt(r.bTV,true):"—"}</td>
+                          <td style={{padding:"8px 10px",color:"#E2E8F0",textAlign:"right",fontWeight:600}}>{r.bTX?inrFmt(r.bTX,true):"—"}</td>
+                          <td style={{padding:"8px 10px",color:r.tI&&r.bI&&normalizeInv(r.tI)!==normalizeInv(r.bI)?"#A78BFA":"#E2E8F0"}}>{r.tI||"—"}</td>
+                          <td style={{padding:"8px 10px",color:r.bD&&r.tD&&r.bD!==r.tD?"#A78BFA":"#64748B"}}>{r.tD||"—"}</td>
+                          <td style={{padding:"8px 10px",color:"#E2E8F0",textAlign:"right",fontWeight:600}}>{r.tTX?inrFmt(r.tTX,true):"—"}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:dc,fontWeight:Math.abs(delta)>0.5?700:400}}>{Math.abs(delta)>0.5?(delta>0?"▲":"▼")+inrFmt(Math.abs(delta),true):"—"}</td>
+                          <td style={{padding:"8px 10px",textAlign:"center"}}>{r.bCnt>1?<span style={{background:"#25081a",color:"#E879F9",border:"1px solid #E879F930",borderRadius:4,padding:"2px 6px",fontWeight:700,fontSize:11}}>{r.bCnt}×</span>:<span style={{color:"#334155"}}>1</span>}</td>
+                          <td style={{padding:"8px 10px",textAlign:"center"}}>{r.bG?(r.gstinValid?<CheckCircle size={13} color="#10B981"/>:<XCircle size={13} color="#F87171"/>):<span style={{color:"#334155"}}>—</span>}</td>
                           <td style={{padding:"7px 10px"}}><StatusChip status={r.reviewStatus}/></td>
                           <td style={{padding:"7px 6px",whiteSpace:"nowrap"}}>
                             <div style={{display:"flex",gap:3,alignItems:"center"}}>
@@ -1159,11 +1173,11 @@ export default function App(){
                     })}
                   </tbody>
                 </table>
-                {filtered.length===0&&<div style={{padding:48,textAlign:"center",color:"#475569"}}><Search size={24} style={{margin:"0 auto 10px",opacity:0.3}}/><div>No records match</div></div>}
+                {filtered.length===0&&<div style={{padding:48,textAlign:"center",color:"#475569"}}><Search size={24} style={{margin:"0 auto 10px",opacity:0.3}}/><div style={{fontSize:13}}>No records match</div></div>}
               </div>
             </div>
-            <div style={{marginTop:10,padding:"8px 14px",background:"#0D1424",border:"1px solid #1E2D45",borderRadius:8,display:"flex",gap:16,flexWrap:"wrap",alignItems:"center",fontSize:10}}>
-              <span style={{color:"#475569",textTransform:"uppercase",letterSpacing:"0.04em",fontWeight:700}}>Legend:</span>
+            <div style={{marginTop:12,padding:"10px 16px",background:"#0D1424",border:"1px solid #1E2D45",borderRadius:8,display:"flex",gap:18,flexWrap:"wrap",alignItems:"center",fontSize:11}}>
+              <span style={{color:"#64748B",textTransform:"uppercase",letterSpacing:"0.04em",fontWeight:700}}>Legend:</span>
               <span style={{color:"#F87171"}}>▲ Books &gt; 2B</span><span style={{color:"#10B981"}}>▼ 2B &gt; Books</span>
               <span style={{color:"#A78BFA"}}>Purple = invoice / date differs</span>
               <span style={{color:"#F87171",marginLeft:"auto"}}>Red GSTIN = invalid format</span>
@@ -1173,21 +1187,21 @@ export default function App(){
 
         {/* ══ VENDOR ANALYSIS ══ */}
         {tab==="vendors"&&vendorStats.length>0&&(
-          <div>
-            <div style={{display:"flex",alignItems:"flex-end",marginBottom:20}}>
+          <div className="tab-content">
+            <div style={{display:"flex",alignItems:"flex-end",marginBottom:22}}>
               <div>
-                <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 4px",color:"#E2E8F0"}}>Party-wise Reconciliation</h2>
-                <p style={{fontSize:11,color:"#64748B",margin:0}}>{vendorStats.length} unique suppliers — click a row to view invoice-level comparison</p>
+                <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 5px",color:"#E2E8F0"}}>Party-wise Reconciliation</h2>
+                <p style={{fontSize:12,color:"#64748B",margin:0}}>{vendorStats.length} unique suppliers — click a row to view invoice-level comparison</p>
               </div>
-              <button style={{...S.ghostBtn,marginLeft:"auto"}} onClick={()=>downloadCSV(enriched,"vendor_reconciliation.csv")}><Download size={12}/> Export All</button>
+              <button className="ghost-btn" style={{...S.ghostBtn,marginLeft:"auto"}} onClick={()=>downloadCSV(enriched,"vendor_reconciliation.csv")}><Download size={13}/> Export All</button>
             </div>
             <div style={{background:"#0D1424",border:"1px solid #1E2D45",borderRadius:12,overflow:"hidden"}}>
               <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{background:"#070B14",borderBottom:"1px solid #1E2D45"}}>
-                    <th style={{padding:"9px 12px",width:20}}/>
+                    <th style={{padding:"10px 12px",width:20}}/>
                     {["Supplier","GSTIN","State","Taxable (Books)","Taxable (2B)","TV Diff","Tax (Books)","Tax (2B)","Tax Diff","Invoices"].map(h=>(
-                      <th key={h} style={{padding:"9px 12px",textAlign:h.includes("Books")||h.includes("2B")||h.includes("Diff")||h==="Invoices"?"right":"left",fontWeight:600,color:"#475569",whiteSpace:"nowrap",fontSize:9,letterSpacing:"0.04em"}}>{h}</th>
+                      <th key={h} style={{padding:"10px 12px",textAlign:h.includes("Books")||h.includes("2B")||h.includes("Diff")||h==="Invoices"?"right":"left",fontWeight:600,color:"#64748B",whiteSpace:"nowrap",fontSize:10,letterSpacing:"0.04em"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -1200,15 +1214,15 @@ export default function App(){
                       return(<>
                         <tr key={v.gstin} onClick={()=>setExpandedVendor(isOpen?null:v.gstin)} style={{borderBottom:"1px solid #1E2D4530",background:isOpen?"#0c1a35":i%2===0?"transparent":"#0A0F1C",cursor:"pointer",transition:"background 0.15s"}}>
                           <td style={{padding:"8px 10px",color:"#64748B"}}>{isOpen?<ChevronDown size={14}/>:<ChevronRight size={14}/>}</td>
-                          <td style={{padding:"8px 12px",color:"#CBD5E1",fontWeight:600,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.name||"—"}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:10,color:v.valid?"#64748B":"#F87171"}}>{v.gstin}</td>
-                          <td style={{padding:"8px 12px",fontSize:10,color:"#475569"}}>{getState(v.gstin)}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",color:"#3B82F6",textAlign:"right",fontWeight:600}}>{inrFmt(v.booksTV,true)}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",color:"#8B5CF6",textAlign:"right",fontWeight:600}}>{inrFmt(v.twoBTV,true)}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",color:tvDc,textAlign:"right",fontWeight:700}}>{Math.abs(tvDiff)<1?"—":(tvDiff>0?"▲":"▼")+inrFmt(Math.abs(tvDiff),true)}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",color:"#3B82F6",textAlign:"right",fontWeight:600}}>{inrFmt(v.booksTX,true)}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",color:"#8B5CF6",textAlign:"right",fontWeight:600}}>{inrFmt(v.twoBTX,true)}</td>
-                          <td style={{padding:"8px 12px",fontFamily:"monospace",color:txDc,textAlign:"right",fontWeight:700}}>{Math.abs(txDiff)<1?"—":(txDiff>0?"▲":"▼")+inrFmt(Math.abs(txDiff),true)}</td>
+                          <td style={{padding:"8px 12px",color:"#E2E8F0",fontWeight:600,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',sans-serif"}}>{v.name||"Unknown Supplier"}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:v.valid?"#64748B":"#F87171"}}>{v.gstin}</td>
+                          <td style={{padding:"8px 12px",fontSize:11,color:"#475569"}}>{getState(v.gstin)}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:"#3B82F6",textAlign:"right",fontWeight:600}}>{inrFmt(v.booksTV,true)}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:"#8B5CF6",textAlign:"right",fontWeight:600}}>{inrFmt(v.twoBTV,true)}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:tvDc,textAlign:"right",fontWeight:700}}>{Math.abs(tvDiff)<1?"—":(tvDiff>0?"▲":"▼")+inrFmt(Math.abs(tvDiff),true)}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:"#3B82F6",textAlign:"right",fontWeight:600}}>{inrFmt(v.booksTX,true)}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:"#8B5CF6",textAlign:"right",fontWeight:600}}>{inrFmt(v.twoBTX,true)}</td>
+                          <td style={{padding:"8px 12px",fontFamily:"'JetBrains Mono',monospace",color:txDc,textAlign:"right",fontWeight:700}}>{Math.abs(txDiff)<1?"—":(txDiff>0?"▲":"▼")+inrFmt(Math.abs(txDiff),true)}</td>
                           <td style={{padding:"8px 12px",textAlign:"right",color:"#94A3B8",fontWeight:600}}>{v.invoices.length}</td>
                         </tr>
                         {isOpen&&(
@@ -1275,32 +1289,32 @@ export default function App(){
 
         {/* ══ REVIEW ══ */}
         {tab==="review"&&(
-          <div>
-            <div style={{marginBottom:20}}>
-              <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 4px",color:"#E2E8F0"}}>Manual Review Queue</h2>
-              <p style={{fontSize:11,color:"#64748B",margin:0}}>Low-confidence matches, mismatches, and missing entries requiring human verification</p>
+          <div className="tab-content">
+            <div style={{marginBottom:22}}>
+              <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 5px",color:"#E2E8F0"}}>Manual Review Queue</h2>
+              <p style={{fontSize:12,color:"#64748B",margin:0}}>Low-confidence matches, mismatches, and missing entries requiring human verification</p>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
               {[{label:"Pending Review",value:stats?.pending,color:"#A78BFA",status:"pending"},{label:"Approved",value:stats?.approved,color:"#10B981",status:"approved"},{label:"Flagged",value:stats?.flagged,color:"#F87171",status:"flagged"}].map(({label,value,color,status})=>(
-                <div key={label} onClick={()=>setReviewFilter(status)} style={{background:"#0D1424",border:`1px solid ${reviewFilter===status?color:"#1E2D45"}`,borderRadius:10,padding:"14px 18px",cursor:"pointer"}}>
-                  <div style={{fontSize:9,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</div>
-                  <div style={{fontSize:24,fontWeight:700,color,fontFamily:"monospace"}}>{value||0}</div>
+                <div key={label} className="kpi-card" onClick={()=>setReviewFilter(status)} style={{background:"#0D1424",border:`1px solid ${reviewFilter===status?color:"#1E2D45"}`,borderRadius:10,padding:"16px 20px",cursor:"pointer"}}>
+                  <div style={{fontSize:11,color:"#64748B",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em",fontWeight:600}}>{label}</div>
+                  <div style={{fontSize:26,fontWeight:700,color,fontFamily:"'JetBrains Mono',monospace"}}>{value||0}</div>
                 </div>
               ))}
             </div>
-            <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
               <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                <Search size={12} style={{position:"absolute",left:9,color:"#475569"}}/>
-                <input placeholder="Search…" value={reviewSearch} onChange={e=>setReviewSearch(e.target.value)} style={{...S.input,width:200}}/>
+                <Search size={13} style={{position:"absolute",left:10,color:"#475569"}}/>
+                <input placeholder="Search…" value={reviewSearch} onChange={e=>setReviewSearch(e.target.value)} style={{...S.input,width:220}}/>
               </div>
               {[["all","All"],["pending","Pending"],["approved","Approved"],["flagged","Flagged"]].map(([v,l])=>(
-                <button key={v} style={S.pill(reviewFilter===v,"#60A5FA")} onClick={()=>setReviewFilter(v)}>{l}</button>
+                <button key={v} className="filter-pill" style={S.pill(reviewFilter===v,"#60A5FA")} onClick={()=>setReviewFilter(v)}>{l}</button>
               ))}
-              <span style={{...S.mono,color:"#475569"}}>{reviewQueue.length} items</span>
-              <button style={{...S.ghostBtn,marginLeft:"auto"}} onClick={()=>downloadCSV(reviewQueue,"review_queue.csv")}><Download size={12}/> Export Queue</button>
+              <span style={{...S.mono,color:"#64748B"}}>{reviewQueue.length} items</span>
+              <button className="ghost-btn" style={{...S.ghostBtn,marginLeft:"auto"}} onClick={()=>downloadCSV(reviewQueue,"review_queue.csv")}><Download size={13}/> Export Queue</button>
             </div>
-            <div style={{display:"flex",gap:5,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:"0.05em",marginRight:4}}>Issue Type:</span>
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.05em",marginRight:4}}>Issue Type:</span>
               {reviewIssueTypes.map(t=>{
                 const col=t==="all"?"#60A5FA":(MC[t]?.color||"#64748B");
                 const count=t==="all"
@@ -1333,22 +1347,22 @@ export default function App(){
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:10}}>
                       {[{label:"Books of Accounts",G:r.bG,I:r.bI,D:r.bD,TV:r.bTV,CG:r.bCG,SG:r.bSG,IG:r.bIG,TX:r.bTX,color:"#3B82F6"},{label:"GSTR-2B",G:r.tG,I:r.tI,D:r.tD,TV:r.tTV,CG:r.tCG,SG:r.tSG,IG:r.tIG,TX:r.tTX,color:"#8B5CF6"}].map(({label,G,I,D,TV,CG,SG,IG,TX,color})=>(
-                        <div key={label} style={{background:"#070B14",borderRadius:8,padding:"12px 14px",borderTop:`2px solid ${color}`}}>
-                          <div style={{fontSize:9,fontWeight:700,color,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                        <div key={label} style={{background:"#070B14",borderRadius:10,padding:"14px 16px",borderTop:`2px solid ${color}`}}>
+                          <div style={{fontSize:10,fontWeight:700,color,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</div>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                             {[["GSTIN",G||"—"],["Invoice",I||"—"],["Date",D||"—"],["Taxable",TV?inrFmt(TV):"—"],["CGST",CG?inrFmt(CG):"—"],["SGST",SG?inrFmt(SG):"—"],["IGST",IG?inrFmt(IG):"—"],["Total Tax",TX?inrFmt(TX):"—"]].map(([k,v])=>(
-                              <div key={k}><div style={{fontSize:9,color:"#475569",marginBottom:2}}>{k}</div><div style={{fontFamily:"monospace",fontSize:11,color:"#CBD5E1",wordBreak:"break-all"}}>{v}</div></div>
+                              <div key={k}><div style={{fontSize:10,color:"#475569",marginBottom:3}}>{k}</div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"#E2E8F0",wordBreak:"break-all"}}>{v}</div></div>
                             ))}
                           </div>
                         </div>
                       ))}
                     </div>
-                    {Math.abs(delta)>0.5&&<div style={{background:"#1c1005",border:"1px solid #F59E0B30",borderRadius:7,padding:"7px 12px",marginBottom:10,fontSize:10,color:"#F59E0B",display:"flex",alignItems:"center",gap:8}}><AlertTriangle size={12}/> Tax difference: {inrFmt(Math.abs(delta))} — Books {delta>0?"higher":"lower"} than 2B</div>}
+                    {Math.abs(delta)>0.5&&<div style={{background:"#1c1005",border:"1px solid #F59E0B30",borderRadius:8,padding:"8px 14px",marginBottom:12,fontSize:11,color:"#F59E0B",display:"flex",alignItems:"center",gap:8}}><AlertTriangle size={13}/> Tax difference: {inrFmt(Math.abs(delta))} — Books {delta>0?"higher":"lower"} than 2B</div>}
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                      <input placeholder="Add a review note…" value={noteInput[r.id]??ir.note??""} onChange={e=>setNoteInput(prev=>({...prev,[r.id]:e.target.value}))} style={{...S.input,flex:1,paddingLeft:10}}/>
-                      <button style={{...S.ghostBtn,padding:"7px 12px"}} onClick={()=>updateReview(r.id,ir.status,noteInput[r.id]??"")}>Save Note</button>
+                      <input placeholder="Add a review note…" value={noteInput[r.id]??ir.note??""} onChange={e=>setNoteInput(prev=>({...prev,[r.id]:e.target.value}))} style={{...S.input,flex:1,paddingLeft:12}}/>
+                      <button className="ghost-btn" style={{...S.ghostBtn,padding:"8px 14px"}} onClick={()=>updateReview(r.id,ir.status,noteInput[r.id]??"")}>Save Note</button>
                     </div>
-                    {ir.note&&<div style={{fontSize:10,color:"#475569",marginTop:6,fontStyle:"italic"}}>Note: {ir.note}</div>}
+                    {ir.note&&<div style={{fontSize:11,color:"#475569",marginTop:8,fontStyle:"italic"}}>Note: {ir.note}</div>}
                   </div>
                 );
               })}
